@@ -18,6 +18,7 @@ connectCloudinary();
 // middleware
 
 const allowedOrigins = [
+  'https://clinic-connect-frontend-b5fu3tcoo-manishkrs-projects.vercel.app',
   'http://localhost:5173', // Backend API
   'http://localhost:5174', // React app
 ];
