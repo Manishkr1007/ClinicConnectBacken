@@ -1,3 +1,100 @@
+// In-memory OTP store (for demo/testing only)
+const otpStore = {}; // { "email_or_mobile": { otp: "123456", expires: Date } }
+
+import transporter from '../config/nodemailer.js';
+import OtpModel from '../models/otpModel.js';
+// Generate a random 6-digit OTP
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Real function to send OTP via email using nodemailer
+async function sendOtpEmail(email, otp) {
+  try {
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Your OTP for ClinicConnect Signup',
+      text: `Your OTP for signup is: ${otp}`,
+      html: `<p>Your OTP for signup is: <b>${otp}</b></p>`
+    });
+    console.log('OTP email sent:', info.messageId);
+    return true;
+  } catch (err) {
+    console.error('Error sending OTP email:', err);
+    return false;
+  }
+}
+
+import twilio from 'twilio';
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioPhone = process.env.TWILIO_PHONE;
+const twilioClient = twilio(accountSid, authToken);
+// Real function to send OTP via SMS using Twilio
+async function sendOtpSms(mobile, otp) {
+  try {
+    await twilioClient.messages.create({
+      body: `Your OTP is: ${otp}`,
+      from: twilioPhone,
+      to: mobile.startsWith('+') ? mobile : `+91${mobile}` // add country code if needed
+    });
+    console.log('OTP SMS sent to', mobile);
+    return true;
+  } catch (err) {
+    console.error('Error sending OTP SMS:', err);
+    return false;
+  }
+}
+
+// Controller to get OTP for signup (email or mobile)
+const getOtp = async (req, res) => {
+  try {
+    const { email, mobile } = req.body;
+    if (!email && !mobile) {
+      return res.status(400).json({ success: false, message: 'Email or mobile is required' });
+    }
+    const otp = generateOtp();
+    if (email) {
+      await sendOtpEmail(email, otp);
+      await OtpModel.findOneAndUpdate(
+        { identifier: email },
+        { otp, expires: new Date(Date.now() + 5 * 60 * 1000), createdAt: new Date() },
+        { upsert: true, new: true }
+      );
+    }
+    if (mobile) {
+      await sendOtpSms(mobile, otp);
+      await OtpModel.findOneAndUpdate(
+        { identifier: mobile },
+        { otp, expires: new Date(Date.now() + 5 * 60 * 1000), createdAt: new Date() },
+        { upsert: true, new: true }
+      );
+    }
+    res.json({ success: true, message: 'OTP sent', otp }); // Remove otp from response in production
+  } catch (error) {
+    console.error('Error in getOtp:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+// Controller to verify OTP using MongoDB
+const verifyOtp = async (req, res) => {
+  const { email, mobile, otp } = req.body;
+  const identifier = email || mobile;
+  const record = await OtpModel.findOne({ identifier });
+  if (!record) {
+    return res.status(400).json({ success: false, message: 'No OTP requested.' });
+  }
+  if (record.otp !== otp) {
+    return res.status(400).json({ success: false, message: 'Invalid OTP.' });
+  }
+  if (new Date() > record.expires) {
+    return res.status(400).json({ success: false, message: 'OTP expired.' });
+  }
+  await OtpModel.deleteOne({ identifier }); // Remove OTP after successful verification
+  return res.json({ success: true, message: 'OTP verified.' });
+};
 import validator from "validator";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -202,6 +299,10 @@ const listAppointment = async (req, res) => {
 // API TO CANCEL APPOINTMENT
 
 const cancelAppointment = async (req, res) => {
+  console.log('--- cancelAppointment ---');
+  console.log('Headers:', req.headers);
+  console.log('User:', req.user);
+  console.log('Session:', req.session);
   try {
     const { appointmentId } = req.body;
     const userId = req.user.id;
@@ -252,6 +353,10 @@ const razorpayInstance = new razorpay({
 // Api to make online payment using razorpay
 
 const paymentRazorpay = async (req, res) => {
+  console.log('--- paymentRazorpay ---');
+  console.log('Headers:', req.headers);
+  console.log('User:', req.user);
+  console.log('Session:', req.session);
   // creation of an order
   try {
     const { appointmentId } = req.body;
@@ -286,6 +391,10 @@ const paymentRazorpay = async (req, res) => {
 // API to verify payment of razorpay
 
 const varifyPayment = async (req, res) => {
+  console.log('--- varifyPayment ---');
+  console.log('Headers:', req.headers);
+  console.log('User:', req.user);
+  console.log('Session:', req.session);
   try {
     const { razorpay_order_id } = req.body;
     const orderInfo = await razorpayInstance.orders.fetch(razorpay_order_id);
@@ -316,4 +425,6 @@ export {
   cancelAppointment,
   paymentRazorpay,
   varifyPayment,
+  getOtp,
+  verifyOtp,
 };

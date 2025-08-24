@@ -1,33 +1,26 @@
 import jwt from 'jsonwebtoken';
 
 
-// const authUser = async (req, res, next) => {
-//   try {
-//     const { token } = req.headers;
-//     if (!token) {
-//       return res.json({ success: false, message: 'Not authorised login' });
-//     }
 
-//     const token_decoded = jwt.verify(token, process.env.JWT_SECRET);
-//      req.body.userId = token_decoded.id;
-//      next();
-     
-//   } catch (error) {
-//     console.error("❌ Auth error:", error.message);
-//     res.status(401).json({ success: false, message: 'Unauthorized' });
-//   }
-// };
+
 
 
 const authUser = (req, res, next) => {
+  // Support session-based (Passport) and JWT auth
+  if (req.user) {
+    // Session-based user (set by Passport)
+    return next();
+  }
+  // JWT fallback
   try {
-    const token = req.headers.token;
+    const token = req.headers.token || req.headers.authorization;
     if (!token) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // 👈 store user ID here
+    // If using 'Bearer <token>' format
+    const jwtToken = token.startsWith('Bearer ') ? token.slice(7) : token;
+    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+    req.user = decoded;
     next();
   } catch (error) {
     res.status(401).json({ success: false, message: 'Unauthorized' });
